@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Speler</title>
+<style>
+/* Rustige spelerpagina voor The Complete Ear Trainer: alleen de video, bladwijzers en tempo. Geen aanbevelingen. */
+:root{color-scheme:dark;--bg:#16120f;--paper:#211b17;--ink:#f3ece4;--muted:#a89a8c;--line:#3a312a;--accent:#e2733b}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:16px max(4vw,12px) 32px}
+h1{font-size:18px;margin:0 0 12px;font-weight:600}
+.vid{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+.vid>div,.vid>iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.bar span{color:var(--muted);font-size:14px;margin-right:2px}
+button{font:inherit;font-size:15px;min-height:40px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.on{border-color:var(--accent);background:#4a2a1a}
+.marks{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:6px}
+.marks button{display:flex;gap:12px;width:100%;text-align:left;border-radius:12px;align-items:center}
+.marks b{color:var(--accent);font-variant-numeric:tabular-nums;min-width:52px}
+.msg{margin-top:14px;color:var(--muted);font-size:14px}
+.msg a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Speler</h1>
+  <div class="vid"><div id="player"></div></div>
+  <div class="bar" id="speed"><span>Tempo</span></div>
+  <ul class="marks" id="marks"></ul>
+  <p class="msg" id="msg"></p>
+</main>
+<script>
+{
+  const q = new URLSearchParams(location.search);
+  const vid = (q.get('v') || '').replace(/[^\w-]/g, '').slice(0, 11);
+  const start = Math.max(0, parseInt(q.get('t'), 10) || 0);
+  const name = q.get('n') || '';
+  const marks = q.getAll('b').map(x => { const i = x.indexOf('|'); return { t:parseInt(i < 0 ? x : x.slice(0, i), 10) || 0, l:i < 0 ? '' : x.slice(i + 1) }; }).sort((a, b) => a.t - b.t);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const fmt = t => { const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); };
+  const ytLink = t => 'https://www.youtube.com/watch?v=' + vid + (t ? '&t=' + t + 's' : '');
+  if (name){ $('title').textContent = name; document.title = name; }
+
+  if (!vid){
+    $('msg').textContent = 'Geen video opgegeven. Open deze pagina via 🎬 Opnames in The Complete Ear Trainer.';
+    $('speed').hidden = true;
+  } else {
+    $('marks').innerHTML = marks.map(m => '<li><button data-t="' + m.t + '"><b>' + fmt(m.t) + '</b><span>' + esc(m.l || 'Bladwijzer') + '</span></button></li>').join('');
+    const speeds = [0.5, 0.75, 0.9, 1];
+    $('speed').insertAdjacentHTML('beforeend', speeds.map(s => '<button data-s="' + s + '"' + (s === 1 ? ' class="on"' : '') + '>' + String(s).replace('.', ',') + '×</button>').join(''));
+    let player = null;
+    window.onYouTubeIframeAPIReady = () => {
+      player = new YT.Player('player', {
+        videoId: vid,
+        host: 'https://www.youtube-nocookie.com',
+        playerVars: { autoplay:1, start, rel:0, playsinline:1, modestbranding:1, iv_load_policy:3 },
+        events: {
+          onError: e => {
+            const why = (e.data === 101 || e.data === 150) ? 'De maker van deze video staat afspelen buiten YouTube niet toe.' : 'Deze video kan hier niet afspelen (fout ' + e.data + ').';
+            $('msg').innerHTML = why + ' <a href="' + ytLink(start) + '">Open hem op YouTube</a>.';
+          },
+          onStateChange: e => { if (e.data === 0) try { player.seekTo(0, true); player.pauseVideo(); } catch(_){} }   // aan het eind: geen "volgende video"-scherm
+        }
+      });
+    };
+    const s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.onerror = () => { $('msg').innerHTML = 'De YouTube-speler kon niet laden. <a href="' + ytLink(start) + '">Open de video op YouTube</a>.'; };
+    document.head.appendChild(s);
+    $('marks').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b && player && player.seekTo){ player.seekTo(+b.dataset.t, true); player.playVideo(); } });
+    $('speed').addEventListener('click', e => {
+      const b = e.target.closest('[data-s]'); if (!b || !player || !player.setPlaybackRate) return;
+      player.setPlaybackRate(+b.dataset.s);
+      $('speed').querySelectorAll('[data-s]').forEach(x => x.classList.toggle('on', x === b));
+    });
+    $('msg').innerHTML = '<a href="' + ytLink(start) + '">Toch op YouTube openen</a>';
+  }
+}
+</script>
+</body>
+</html>
